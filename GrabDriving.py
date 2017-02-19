@@ -1,4 +1,4 @@
-import re, datetime, smtplib, time, os, requests, shutil 
+import re, datetime, smtplib, time, os, requests, shutil, sys 
 from robobrowser import RoboBrowser 
 from email.mime.text import MIMEText 
 from bs4 import BeautifulSoup 
@@ -32,7 +32,7 @@ def scheduled_grab():
         continue_link_exists = browser.get_link(text="Continue") 
         if continue_link_exists: 
             browser.follow_link(continue_link_exists)
-
+        
         recaptcha_exists = browser.find('iframe')
         if recaptcha_exists:
             recaptcha_api_link = recaptcha_exists.get('src') 
@@ -84,6 +84,7 @@ def scheduled_grab():
         dvla_password = os.environ['DVLA_PASSWORD']
         
         login_form = browser.get_form() 
+
         login_form['username'].value = dvla_username
         login_form['password'].value = dvla_password
         if recaptcha_exists: 
@@ -97,7 +98,6 @@ def scheduled_grab():
         date_form = browser.get_form() 
         date_form['testChoice'].value = 'ASAP' 
         browser.submit_form(date_form) 
-        
         earliest_date_found = browser.find(attrs={"class":"BookingCalendar-date--bookable "}).find(attrs={"class":"BookingCalendar-dateLink "}).get("data-date")
 
         earliest_date = datetime.datetime.strptime(earliest_date_found, "%Y-%m-%d") 
@@ -108,9 +108,11 @@ def scheduled_grab():
         
         print "Checked at " + datetime.datetime.strftime(datetime.datetime.now(), "%Y-%m-%d %H:%M:%S") + " and the earliest date found was " + earliest_date_found
     except Exception as e: 
-        print e
+        exc_type, exc_obj, exc_tb = sys.exc_info()
+        fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+        print (exc_type, fname, exc_tb.tb_lineno)
 
 while True: 
     scheduled_grab()
-    time.sleep(300)
+    time.sleep(30)
 
