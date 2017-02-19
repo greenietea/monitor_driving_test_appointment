@@ -93,6 +93,11 @@ def scheduled_grab():
         browser.submit_form(login_form) 
 
         change_date_time_link = browser.get_link("Change Date and time of test") 
+        if not change_date_time_link: 
+            print "error, no change_date_time_link_found"
+            print browser.parsed 
+            return
+
         browser.follow_link(change_date_time_link)
 
         date_form = browser.get_form() 
