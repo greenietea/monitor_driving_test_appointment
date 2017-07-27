@@ -27,4 +27,11 @@ export DVLA_USERNAME="lastname plus numbers"
 export DVLA_PASSWORD="test booking number"
 export CAPTCHA_SOLVER_API_KEY=""
 export CURRENT_BOOKING=""
+```
+
+Then run 
+```
+python GrabDriving.py
+```
+
 
