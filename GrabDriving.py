@@ -22,6 +22,66 @@ def send_email(message):
     server.sendmail(to_email,from_email,msg.as_string())
     server.close()
 
+def fill_out_form(browser):
+    recaptcha_exists = browser.find('iframe')
+    if recaptcha_exists:
+        recaptcha_api_link = recaptcha_exists.get('src') 
+        resp = requests.get(recaptcha_api_link) 
+        if resp.status_code != 200: 
+            print "error: failed to get captcha link" 
+            return 
+
+        soup = BeautifulSoup(resp.text, "html.parser") 
+        recaptcha_link = 'https://www.google.com/recaptcha/api/' + soup.img['src']
+        image_resp = requests.get(recaptcha_link, stream=True)
+        if image_resp.status_code != 200: 
+            print "error: failed to get captcha image" 
+            return
+
+        with open('recaptcha.jpg', 'wb') as out_file: 
+            shutil.copyfileobj(image_resp.raw, out_file)
+        del image_resp
+        
+        captcha_solver_api_key = os.environ['CAPTCHA_SOLVER_API_KEY']
+        captcha_solver_resp = requests.post('http://2captcha.com/in.php', files={'file':open('recaptcha.jpg','rb')}, data={'key':captcha_solver_api_key,'phrase':1,'method':'post'})
+        if captcha_solver_resp.status_code != 200 or 'ERROR' in captcha_solver_resp.text or 'IP_BANNED' in captcha_solver_resp.text or 'OK' not in captcha_solver_resp.text:  
+            print "error: failed to solve captcha because " + captcha_solver_resp.text  
+            return 
+
+        keep_trying_to_solve = True
+        tried_times = 0 
+        captcha_id = captcha_solver_resp.text.split('|')[1]
+        while keep_trying_to_solve:
+            time.sleep(5)
+            tried_times += 1
+            captcha_solver_resp = requests.get('http://2captcha.com/res.php?key='+captcha_solver_api_key+'&action=get&id='+captcha_id)
+            if captcha_solver_resp.text != 'CAPCHA_NOT_READY' or tried_times > 100:
+                print "tried " + str(tried_times) + " times"
+                keep_trying_to_solve = False
+
+        if 'ERROR' in captcha_solver_resp.text:
+            print "error: failed to solve captcha because " + captcha_solver_resp.text 
+            return 
+            
+        if tried_times > 100: 
+            print "error: tried more than 100 times and 2captcha is basically a failure" 
+            return
+            
+        print captcha_solver_resp.text
+        solved_captcha = captcha_solver_resp.text.split('|')[1] 
+
+    dvla_username = os.environ['DVLA_USERNAME']
+    dvla_password = os.environ['DVLA_PASSWORD']
+    
+    login_form = browser.get_form() 
+
+    login_form['username'].value = dvla_username
+    login_form['password'].value = dvla_password
+    if recaptcha_exists: 
+        login_form['recaptcha_challenge_field'].value = solved_captcha 
+
+    browser.submit_form(login_form) 
+
 def scheduled_grab():
     browser = RoboBrowser(parser="html.parser",history=True) 
     browser.open('https://www.gov.uk/change-driving-test')
@@ -32,71 +92,13 @@ def scheduled_grab():
         continue_link_exists = browser.get_link(text="Continue") 
         if continue_link_exists: 
             browser.follow_link(continue_link_exists)
-        
-        recaptcha_exists = browser.find('iframe')
-        if recaptcha_exists:
-            recaptcha_api_link = recaptcha_exists.get('src') 
-            resp = requests.get(recaptcha_api_link) 
-            if resp.status_code != 200: 
-                print "error: failed to get captcha link" 
-                return 
 
-            soup = BeautifulSoup(resp.text, "html.parser") 
-            recaptcha_link = 'https://www.google.com/recaptcha/api/' + soup.img['src']
-            image_resp = requests.get(recaptcha_link, stream=True)
-            if image_resp.status_code != 200: 
-                print "error: failed to get captcha image" 
-                return
-
-            with open('recaptcha.jpg', 'wb') as out_file: 
-                shutil.copyfileobj(image_resp.raw, out_file)
-            del image_resp
-            
-            captcha_solver_api_key = os.environ['CAPTCHA_SOLVER_API_KEY']
-            captcha_solver_resp = requests.post('http://2captcha.com/in.php', files={'file':open('recaptcha.jpg','rb')}, data={'key':captcha_solver_api_key,'phrase':1,'method':'post'})
-            if captcha_solver_resp.status_code != 200 or 'ERROR' in captcha_solver_resp.text or 'IP_BANNED' in captcha_solver_resp.text or 'OK' not in captcha_solver_resp.text:  
-                print "error: failed to solve captcha because " + captcha_solver_resp.text  
-                return 
-
-            keep_trying_to_solve = True
-            tried_times = 0 
-            captcha_id = captcha_solver_resp.text.split('|')[1]
-            while keep_trying_to_solve:
-                time.sleep(5)
-                tried_times += 1
-                captcha_solver_resp = requests.get('http://2captcha.com/res.php?key='+captcha_solver_api_key+'&action=get&id='+captcha_id)
-                if captcha_solver_resp.text != 'CAPCHA_NOT_READY' or tried_times > 100:
-                    print "tried " + str(tried_times) + " times"
-                    keep_trying_to_solve = False
-
-            if 'ERROR' in captcha_solver_resp.text:
-                print "error: failed to solve captcha because " + captcha_solver_resp.text 
-                return 
-            
-            if tried_times > 100: 
-                print "error: tried more than 100 times and 2captcha is basically a failure" 
-                return
-            
-            print captcha_solver_resp.text
-            solved_captcha = captcha_solver_resp.text.split('|')[1] 
-
-        dvla_username = os.environ['DVLA_USERNAME']
-        dvla_password = os.environ['DVLA_PASSWORD']
-        
-        login_form = browser.get_form() 
-
-        login_form['username'].value = dvla_username
-        login_form['password'].value = dvla_password
-        if recaptcha_exists: 
-            login_form['recaptcha_challenge_field'].value = solved_captcha 
-
-        browser.submit_form(login_form) 
+        fill_out_form(browser)
 
         change_date_time_link = browser.get_link("Change Date and time of test") 
         if not change_date_time_link: 
-            print "error, no change_date_time_link_found"
-            print browser.parsed 
-            return
+            fill_out_form()
+            change_date_time_link = browser.get_link("Change Date and time of test") 
 
         browser.follow_link(change_date_time_link)
 
@@ -106,7 +108,11 @@ def scheduled_grab():
         earliest_date_found = browser.find(attrs={"class":"BookingCalendar-date--bookable "}).find(attrs={"class":"BookingCalendar-dateLink "}).get("data-date")
 
         earliest_date = datetime.datetime.strptime(earliest_date_found, "%Y-%m-%d") 
-        current_booking = datetime.datetime(2017,5,4) 
+        current_booking_date = os.environ['CURRENT_BOOKING'].split('-')
+        current_booking_year = int(current_booking_date[0])
+        current_booking_month = int(current_booking_date[1])
+        current_booking_day = int(current_booking_date[2])
+        current_booking = datetime.datetime(current_booking_year,current_booking_month,current_booking_day)
 
         if earliest_date < current_booking: 
             send_email("Found an earlier date on " + earliest_date_found) 
